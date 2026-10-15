@@ -1,0 +1,79 @@
+
+#include <ESP8266WiFi.h>
+#include <espnow.h>
+
+const int trigPin = D5;
+const int echoPin = D6;
+
+// Փոխիր ընդունող ESP-ի MAC հասցեով
+uint8_t receiverMac[] = {
+  0x24, 0x4C, 0xAB, 0x48, 0x79, 0xFE
+};
+
+struct Message {
+  bool ledOn;
+};
+
+Message data;
+
+unsigned long lastSend = 0;
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+
+  Serial.print("Sender MAC: ");
+  Serial.println(WiFi.macAddress());
+
+  if (esp_now_init() != 0) {
+    Serial.println("ESP-NOW init failed");
+    return;
+  }
+
+  esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
+
+  if (esp_now_add_peer(receiverMac, ESP_NOW_ROLE_SLAVE,
+                       1, NULL, 0) != 0) {
+    Serial.println("Peer add failed");
+  }
+}
+
+void loop() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  unsigned long duration = pulseIn(echoPin, HIGH, 30000);
+  float distance = duration * 0.0343 / 2.0;
+
+  // Խոչընդոտը 25 սմ-ից մոտ է
+  data.ledOn = (duration > 0 && distance < 100.0);
+
+  if (millis() - lastSend >= 100) {
+    lastSend = millis();
+
+    esp_now_send(receiverMac,
+                 (uint8_t *)&data, sizeof(data));
+
+    Serial.print("Distance: ");
+    if (duration == 0) {
+      Serial.print("No echo");
+    } else {
+      Serial.print(distance);
+      Serial.print(" cm");
+    }
+
+    Serial.print(" | Obstacle: ");
+    Serial.println(data.ledOn ? "YES" : "NO");
+  }
+
+  delay(30);
+}
