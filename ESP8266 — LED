@@ -1,0 +1,73 @@
+
+#include <ESP8266WiFi.h>
+#include <espnow.h>
+
+const int ledPin = D4;
+
+struct Message {
+  bool ledOn;
+};
+
+Message data;
+
+bool ledOn = false;
+bool ledState = false;
+
+unsigned long blinkStart = 0;
+unsigned long lastBlink = 0;
+
+const unsigned long blinkDuration = 2000; // 5 վրկ
+const unsigned long blinkInterval = 100;  // արագ թարթում
+
+void onReceive(uint8_t *mac, uint8_t *incomingData,
+               uint8_t len) {
+  if (len != sizeof(Message)) return;
+
+  memcpy(&data, incomingData, sizeof(data));
+
+  // Միայն ON ազդանշանն է սկսում նոր 5 վրկ թարթում
+  if (data.ledOn) {
+    ledOn = true;
+    blinkStart = millis();
+    lastBlink = millis();
+    ledState = true;
+    digitalWrite(ledPin, HIGH);
+  }
+
+  Serial.println(data.ledOn ? "Blink started" : "No obstacle");
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+
+  Serial.print("Receiver MAC: ");
+  Serial.println(WiFi.macAddress());
+
+  if (esp_now_init() != 0) {
+    Serial.println("ESP-NOW init failed");
+    return;
+  }
+
+  esp_now_set_self_role(ESP_NOW_ROLE_SLAVE);
+  esp_now_register_recv_cb(onReceive);
+}
+
+void loop() {
+  if (ledOn) {
+    if (millis() - blinkStart >= blinkDuration) {
+      ledOn = false;
+      ledState = false;
+      digitalWrite(ledPin, LOW);
+    } else if (millis() - lastBlink >= blinkInterval) {
+      lastBlink = millis();
+      ledState = !ledState;
+      digitalWrite(ledPin, ledState ? HIGH : LOW);
+    }
+  }
+}
